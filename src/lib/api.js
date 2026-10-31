@@ -1,6 +1,6 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-export const AUCTION_ID = import.meta.env.VITE_AUCTION_ID;
+export const AUCTION_ID = import.meta.env.VITE_AUCTION_ID || "6ae5a8e9a6a02277e1ff9e6f";
 
 export async function fetchAuction() {
   const r = await fetch(`${API}/api/auction/${AUCTION_ID}`);
