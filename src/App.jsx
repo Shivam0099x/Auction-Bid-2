@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { fetchAuction, placeBid, endAuction, AUCTION_ID } from "./lib/api";
+import { useEffect, useState } from "react";
+import { loadAuction, saveAuction, resetAuction, uid } from "./lib/storage";
 import ItemPanel from "./components/ItemPanel";
 import Countdown from "./components/Countdown";
 import CurrentBid from "./components/CurrentBid";
@@ -8,78 +8,84 @@ import BidHistory from "./components/BidHistory";
 import WinnerBanner from "./components/WinnerBanner";
 
 export default function App() {
-  const [data, setData] = useState(null);   // { auction, currentBid, bids }
-  const [error, setError] = useState("");
+  const [state, setState] = useState(loadAuction);
   const [now, setNow] = useState(Date.now());
-  const [notConfigured, setNotConfigured] = useState(false);
 
-  useEffect(() => {
-    if (!AUCTION_ID) { setNotConfigured(true); return; }
-    load();
-  }, []);
+  useEffect(() => saveAuction(state), [state]);
 
-  // live tick — 1s
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // poll the server every 3s so OTHER devices' bids appear
+  const remaining = Math.max(0, state.endTime - now);
+  const isLive = state.status === "live" && remaining > 0;
+
+  const currentBid = state.bids.length
+    ? state.bids.reduce((top, b) => (b.amount > (top?.amount ?? 0) ? b : top), null)
+    : null;
+
+  // auto-end: jab time khatam ho, winner set karo
   useEffect(() => {
-    if (!AUCTION_ID) return;
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
-  }, []);
-
-  const load = useCallback(async () => {
-    try {
-      const d = await fetchAuction();
-      setData(d);
-      setError("");
-    } catch (e) {
-      setError(e.message);
+    if (state.status === "live" && remaining === 0) {
+      const top = currentBid;
+      setState((s) => ({
+        ...s,
+        status: "ended",
+        winner: top
+          ? { bidder: top.bidder, amount: top.amount, awardedAt: Date.now() }
+          : null,
+      }));
     }
-  }, []);
+  }, [remaining, state.status, currentBid]);
 
-  const handleBid = async (bidder, amount) => {
-    await placeBid(bidder, amount);
-    await load();
+  const placeBid = (bidder, amount) => {
+    if (!isLive) throw new Error("Auction has ended");
+    if (!bidder.trim()) throw new Error("Enter your name");
+    if (!Number.isFinite(amount) || amount <= 0)
+      throw new Error("Enter a valid amount");
+
+    const floor = currentBid ? currentBid.amount : state.startingPrice;
+    if (amount <= floor)
+      throw new Error(`Bid must be greater than ₹${floor.toLocaleString()}`);
+    if (currentBid && currentBid.bidder.toLowerCase() === bidder.toLowerCase())
+      throw new Error("You are already the highest bidder");
+
+    setState((s) => ({
+      ...s,
+      bids: [
+        { id: uid(), bidder: bidder.trim(), amount, at: Date.now() },
+        ...s.bids,
+      ],
+    }));
   };
 
-  if (notConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-lg font-semibold mb-2">Auction not configured</h1>
-          <p className="text-sm text-[var(--muted)]">
-            Add <code className="bg-stone-100 px-1.5 py-0.5 rounded">VITE_AUCTION_ID</code> to{" "}
-            <code className="bg-stone-100 px-1.5 py-0.5 rounded">client/.env</code>. Seed one by
-            calling <code className="bg-stone-100 px-1.5 py-0.5 rounded">POST /api/auction/seed</code>.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const simulateBidder = () => {
+    if (!isLive) return;
+    const names = ["Rahul", "Priya", "Aarav", "Neha", "Vikram", "Ananya"];
+    const floor = currentBid ? currentBid.amount : state.startingPrice;
+    const amount = floor + Math.floor(50 + Math.random() * 200);
+    const bidder = names[Math.floor(Math.random() * names.length)];
+    try {
+      placeBid(bidder, amount);
+    } catch {}
+  };
 
-  if (error && !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-rose-600 text-sm">
-        {error}
-      </div>
-    );
-  }
+  const endNow = () => {
+    const top = currentBid;
+    setState((s) => ({
+      ...s,
+      status: "ended",
+      endTime: Date.now(),
+      winner: top
+        ? { bidder: top.bidder, amount: top.amount, awardedAt: Date.now() }
+        : null,
+    }));
+  };
 
-  if (!data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-[var(--muted)]">
-        Loading auction…
-      </div>
-    );
-  }
-
-  const { auction, currentBid, bids } = data;
-  const remaining = Math.max(0, new Date(auction.endTime).getTime() - now);
-  const isLive = auction.status === "live" && remaining > 0;
+  const reset = () => {
+    setState(resetAuction());
+  };
 
   return (
     <div className="min-h-screen">
@@ -96,38 +102,50 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <ItemPanel auction={auction} />
+        <ItemPanel auction={state} />
 
         <div className="space-y-4">
-          {!isLive && auction.winner && (
-            <WinnerBanner winner={auction.winner} />
-          )}
-          {!isLive && !auction.winner && (
+          {!isLive && state.winner && <WinnerBanner winner={state.winner} />}
+          {!isLive && !state.winner && (
             <div className="border border-[var(--line)] bg-white rounded-lg p-4 text-sm text-[var(--muted)]">
               Auction ended with no bids.
             </div>
           )}
 
-          <CurrentBid
-            currentBid={currentBid}
-            startingPrice={auction.startingPrice}
-          />
+          <CurrentBid currentBid={currentBid} startingPrice={state.startingPrice} />
 
           <BidForm
             disabled={!isLive}
-            floor={currentBid ? currentBid.amount : auction.startingPrice}
-            onSubmit={handleBid}
+            floor={currentBid ? currentBid.amount : state.startingPrice}
+            onSubmit={placeBid}
           />
 
-          <BidHistory bids={bids} startingPrice={auction.startingPrice} />
+          <BidHistory bids={state.bids} startingPrice={state.startingPrice} />
 
-          <button
-            onClick={endAuction}
-            className="text-xs text-stone-400 hover:text-stone-700 transition"
-            title="Dev: end auction now"
-          >
-            Dev · End auction now
-          </button>
+          <div className="flex items-center gap-3 text-xs">
+            <button
+              onClick={simulateBidder}
+              disabled={!isLive}
+              className="text-stone-500 hover:text-stone-800 disabled:opacity-40 transition"
+            >
+              Demo · Simulate bidder
+            </button>
+            <span className="text-stone-300">·</span>
+            <button
+              onClick={endNow}
+              disabled={!isLive}
+              className="text-stone-500 hover:text-stone-800 disabled:opacity-40 transition"
+            >
+              End now
+            </button>
+            <span className="text-stone-300">·</span>
+            <button
+              onClick={reset}
+              className="text-stone-400 hover:text-rose-600 transition"
+            >
+              Reset auction
+            </button>
+          </div>
         </div>
       </main>
     </div>

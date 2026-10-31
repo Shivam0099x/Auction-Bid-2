@@ -1,5 +1,5 @@
-const fmtTime = (iso) =>
-  new Date(iso).toLocaleTimeString(undefined, {
+const fmtTime = (ms) =>
+  new Date(ms).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -21,7 +21,7 @@ export default function BidHistory({ bids, startingPrice }) {
           <ul className="divide-y divide-[var(--line)]">
             {bids.map((b, i) => (
               <li
-                key={b._id}
+                key={b.id}
                 className="px-4 py-2 flex items-center justify-between text-sm"
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -36,7 +36,7 @@ export default function BidHistory({ bids, startingPrice }) {
                   <span className="tabular-nums font-medium">
                     ₹{b.amount.toLocaleString()}
                   </span>
-                  <span className="text-[var(--muted)]">{fmtTime(b.createdAt)}</span>
+                  <span className="text-[var(--muted)]">{fmtTime(b.at)}</span>
                 </div>
               </li>
             ))}

@@ -4,24 +4,15 @@ export default function BidForm({ disabled, floor, onSubmit }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [err, setErr] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault();
     setErr("");
-    if (!name.trim()) { setErr("Enter your name"); return; }
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) { setErr("Enter a valid amount"); return; }
-    if (n <= floor) { setErr(`Bid must be greater than ₹${floor.toLocaleString()}`); return; }
-
-    setSubmitting(true);
     try {
-      await onSubmit(name.trim(), n);
+      onSubmit(name, Number(amount));
       setAmount("");
     } catch (e) {
       setErr(e.message);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -51,11 +42,11 @@ export default function BidForm({ disabled, floor, onSubmit }) {
       </div>
       {err && <p className="text-xs text-rose-600">{err}</p>}
       <button
-        disabled={disabled || submitting}
+        disabled={disabled}
         type="submit"
         className="w-full bg-[var(--ink)] text-white text-sm font-medium py-2 rounded-md hover:opacity-90 disabled:opacity-50 transition"
       >
-        {disabled ? "Bidding closed" : submitting ? "Placing…" : "Place bid"}
+        {disabled ? "Bidding closed" : "Place bid"}
       </button>
     </form>
   );
